@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kinetic Assets — 움직임을 자산으로</title>
+<link rel="icon" type="image/svg+xml" href="favicon.svg">
+<!-- Pretendard. crossorigin 필수 — COEP require-corp 아래서 no-cors 로 받으면 차단된다.
+     dynamic-subset 은 쓰인 글자만 내려받아 한글 폰트 용량 문제를 피한다. -->
+<link rel="stylesheet" crossorigin="anonymous"
+      href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.css">
+<link rel="stylesheet" href="style.css">
+
+<!-- GitHub Pages는 커스텀 헤더를 못 넣는다 → COOP/COEP 없음 → SharedArrayBuffer 없음.
+     WebGPU 경로는 영향을 받지 않지만, WASM 폴백이 단일 스레드로 조용히 떨어지는 걸 막으려고
+     서비스워커로 헤더를 주입한다. 정적 호스팅에서만 동작하고 로컬 serve.py에서는 무해하다. -->
+<script src="coi-serviceworker.js"></script>
+
+<script crossorigin="anonymous" src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-core@4.22.0/dist/tf-core.min.js"></script>
+<script crossorigin="anonymous" src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-converter@4.22.0/dist/tf-converter.min.js"></script>
+<script crossorigin="anonymous" src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-backend-webgl@4.22.0/dist/tf-backend-webgl.min.js"></script>
+<script crossorigin="anonymous" src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-backend-cpu@4.22.0/dist/tf-backend-cpu.min.js"></script>
+<script crossorigin="anonymous" src="https://cdn.jsdelivr.net/npm/@tensorflow-models/pose-detection@2.1.3/dist/pose-detection.min.js"></script>
+<script crossorigin="anonymous" src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.27.0/dist/ort.all.min.js"></script>
+</head>
+<body>
+<div class="page">
+
+  <header class="hero">
+    <h1>Kinetic Assets</h1>
+    <p class="quote">“움직임을 자산으로”</p>
+    <p class="deck">어제의 나와 비교하는 리스크 관리</p>
+    <p class="by">HUI3D <span>조윤민 · 황수인 · 김민지</span></p>
+  </header>
+
+  <!-- ─────────────────  01  ───────────────── -->
+  <div class="bar"><span class="n">01</span><h2>Live</h2></div>
+
+  <div class="actions" style="margin:0 0 14px">
+    <button class="go" id="start">측정 시작</button>
+    <button class="go alt" id="stop" disabled>중지</button>
+    <button class="mini" id="src">입력: 카메라</button>
+    <span class="mono" id="stat" style="font-size:13.5px;color:var(--ink-3)"></span>
+  </div>
+
+  <div class="console">
+    <section class="card">
+      <div class="hd">카메라</div>
+      <div class="stage">
+        <video id="vid" playsinline muted loop></video>
+        <canvas id="c2d"></canvas>
+        <div class="idle" id="idle2d">[측정 시작]을 누르면<br>카메라가 켜집니다</div>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="hd">
+        <span>3D 자세</span>
+        <label class="turn">돌려보기
+          <input type="range" id="yaw" min="-180" max="180" value="34" aria-label="보는 각도">
+        </label>
+      </div>
+      <div class="stage plot"><canvas id="c3d"></canvas></div>
+    </section>
+
+    <section class="card">
+      <div class="hd">지금 내 움직임</div>
+      <div class="bd" id="metrics"></div>
+    </section>
+  </div>
+
+  <!-- ─────────────────  02  ───────────────── -->
+  <div class="bar"><span class="n">02</span><h2>Past vs Today</h2></div>
+
+  <div class="compare">
+    <section class="card">
+      <div class="score">
+        <div class="lbl">건강 자산 점수</div>
+        <div class="v" id="scoreV">–<small>점</small></div>
+        <div class="pill" id="scoreP"><span class="dot"></span><span id="scoreT">기준선 없음</span></div>
+        <div class="sub" id="scoreS">기준선을 먼저 등록하세요</div>
+        <div class="actions" style="justify-content:center;margin-top:14px">
+          <button class="mini" id="cal">기준선 등록</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="hd">
+        <span>평소와 비교</span>
+        <span class="legend">
+          <span class="m"><i></i>오늘의 나</span>
+          <span class="r"><i></i>기준선</span>
+        </span>
+      </div>
+      <div class="bd"><div class="dists" id="dists"></div></div>
+    </section>
+  </div>
+
+  <details class="settings">
+    <summary>설정</summary>
+    <div class="bd">
+      <label>카메라<select id="cam"><option value="">기본 카메라</option></select></label>
+      <label>해상도<select id="res">
+        <option>640x480</option><option selected>1280x720</option><option>1920x1080</option></select></label>
+      <label>화면 비율<select id="fit">
+        <option value="portrait" selected>세로 3:4</option><option value="full">원본 그대로</option></select></label>
+      <label>좌우 반전<input type="checkbox" id="mir"></label>
+      <label>수평 보정<input type="checkbox" id="lvl" checked></label>
+      <label>실행 백엔드<select id="ep"><option value="webgpu">WebGPU</option><option value="wasm">WASM (CPU)</option></select></label>
+      <label>모델<select id="model"><option value="lite" selected>MB_lite</option><option value="base">MB_base</option></select></label>
+      <label>정밀도<select id="prec"><option value="fp16" selected>fp16</option><option value="fp32">fp32</option></select></label>
+      <label>윈도우 길이<select id="win"><option>51</option><option>81</option><option selected>100</option></select></label>
+      <label>리프팅 주기<input type="range" id="stride" min="1" max="60" value="30"><b id="strideV">30 fr</b></label>
+      <label>판독 지연<input type="range" id="lag" min="0" max="95" value="50"><b id="lagV">50 fr</b></label>
+      <label>지연 자동 최소화<input type="checkbox" id="autolag" checked></label>
+      <label>카메라 검색<span style="margin-left:auto;display:flex;gap:6px">
+        <button class="mini" id="scan">검색</button></span></label>
+      <label>기준선<span style="margin-left:auto;display:flex;gap:6px">
+        <button class="mini" id="clr">삭제</button></span></label>
+    </div>
+    <div class="bd" style="display:block">
+      <div class="hud">
+        <div>카메라<b id="m_fps">–</b></div>
+        <div>2D 추정<b id="m_2d">–</b></div>
+        <div>3D 리프팅<b id="m_lift">–</b></div>
+        <div>점유율<b id="m_duty">–</b></div>
+        <div>총 지연<b id="m_e2e">–</b></div>
+        <div>3D 커버리지<b id="m_cov">–</b></div>
+        <div>백엔드<b id="m_ep">–</b></div>
+        <div>모델 로드<b id="m_load">–</b></div>
+      </div>
+      <div id="log"></div>
+    </div>
+  </details>
+
+</div>
+<script src="app.js"></script>
+</body>
+</html>

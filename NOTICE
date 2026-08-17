@@ -1,0 +1,37 @@
+Kinetic Assets — 실시간 움직임 분석 데모
+HUI3D (조윤민 · 황수인 · 김민지), 고려대학교
+
+이 사이트는 브라우저 안에서만 동작한다. 카메라 영상과 관절 좌표는 기기를 떠나지
+않으며 서버로 전송되지 않는다.
+
+
+─────────────────────────────────────────────────────────────────────
+포함된 서드파티 구성요소
+─────────────────────────────────────────────────────────────────────
+
+MotionBERT  (models/mb_lite_100_fp16.onnx)
+    Copyright (c) 2022 Wentao Zhu et al.
+    Licensed under the Apache License, Version 2.0
+    https://github.com/Walter0807/MotionBERT
+    http://www.apache.org/licenses/LICENSE-2.0
+
+    이 파일은 MotionBERT 의 공개 lite 체크포인트를 고정 길이(F=100) ONNX 그래프로
+    내보내고 fp16 으로 변환한 파생물이다. 모델 구조와 가중치는 변경하지 않았다.
+
+
+런타임에 CDN 에서 불러오는 라이브러리 (배포본에 포함되지 않음)
+
+    TensorFlow.js / MoveNet  — Apache-2.0, Google LLC
+    onnxruntime-web          — MIT, Microsoft Corporation
+    Pretendard               — SIL Open Font License 1.1, Kil Hyung-jin
+
+
+─────────────────────────────────────────────────────────────────────
+데이터
+─────────────────────────────────────────────────────────────────────
+
+이 배포본에는 NTU RGB+D 데이터셋에서 파생된 어떤 영상·좌표도 포함되어 있지 않다.
+NTU RGB+D 는 연구 목적 라이선스로 재배포가 제한되며, 개발 중 검증에만 사용했다.
+
+개인 기준선은 브라우저 메모리에만 존재하며 저장되지 않는다. 새로 등록하면 이전
+기준선은 즉시 폐기되고, 페이지를 닫거나 새로고침하면 사라진다.
